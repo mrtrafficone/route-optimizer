@@ -4,10 +4,12 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Multi-Stop Route Optimizer</title>
-    <!-- Tailwind CSS for styling -->
+    <!-- Tailwind CSS -->
     <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
     <!-- Leaflet CSS -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <!-- Leaflet Polyline Decorator for Arrows -->
+    <script src="https://unpkg.com/leaflet-polylinedecorator@1.6.0/dist/leaflet.polylineDecorator.js"></script>
     <style>
         #map { height: 100%; min-height: 400px; }
     </style>
@@ -26,15 +28,19 @@
         <!-- Sidebar Controls -->
         <div class="w-full md:w-96 bg-white p-4 overflow-y-auto shadow-lg flex flex-col gap-4 z-10">
             
-            <!-- Search / Add Location Section -->
-            <div class="border p-3 rounded-lg bg-gray-50 flex flex-col gap-3">
-                <h2 class="font-semibold text-gray-700">Add Location</h2>
-                
+            <!-- Tabs for Single vs Bulk Search -->
+            <div class="flex border-b text-sm font-medium">
+                <button onclick="switchTab('single')" id="tabSingle" class="flex-1 py-2 text-center border-b-2 border-blue-600 text-blue-600 cursor-pointer">Single Add</button>
+                <button onclick="switchTab('bulk')" id="tabBulk" class="flex-1 py-2 text-center text-gray-500 cursor-pointer">Batch Nearest (50)</button>
+            </div>
+
+            <!-- Single Search Panel -->
+            <div id="panelSingle" class="border p-3 rounded-lg bg-gray-50 flex flex-col gap-3">
+                <h2 class="font-semibold text-gray-700 text-sm">Add Individual Location</h2>
                 <div>
-                    <label class="text-xs text-gray-500 font-medium">Query (e.g., Chick-fil-A)</label>
+                    <label class="text-xs text-gray-500 font-medium">Query (e.g., Central Park)</label>
                     <input type="text" id="searchQuery" placeholder="Location name or address" class="w-full border p-2 rounded text-sm mt-1">
                 </div>
-
                 <div class="grid grid-cols-2 gap-2">
                     <div>
                         <label class="text-xs text-gray-500 font-medium">City</label>
@@ -45,9 +51,29 @@
                         <input type="text" id="searchState" placeholder="State/Country" class="w-full border p-2 rounded text-sm mt-1">
                     </div>
                 </div>
-
                 <button onclick="searchAndAddLocation()" class="bg-blue-600 hover:bg-blue-700 text-white p-2 rounded text-sm font-medium transition cursor-pointer">
                     Search & Add
+                </button>
+            </div>
+
+            <!-- Bulk Search Panel -->
+            <div id="panelBulk" class="hidden border p-3 rounded-lg bg-gray-50 flex flex-col gap-3">
+                <h2 class="font-semibold text-gray-700 text-sm">Batch Find Nearest Places</h2>
+                <p class="text-xs text-gray-500">Finds multiple locations near a reference point.</p>
+                <div>
+                    <label class="text-xs text-gray-500 font-medium">Reference Location (e.g., Raleigh, NC or address)</label>
+                    <input type="text" id="bulkCenter" placeholder="Center city or address" class="w-full border p-2 rounded text-sm mt-1">
+                </div>
+                <div>
+                    <label class="text-xs text-gray-500 font-medium">What to find? (e.g., Chick-fil-A, Starbucks)</label>
+                    <input type="text" id="bulkKeyword" placeholder="Business or amenity keyword" class="w-full border p-2 rounded text-sm mt-1">
+                </div>
+                <div>
+                    <label class="text-xs text-gray-500 font-medium">Quantity (Max 50)</label>
+                    <input type="number" id="bulkLimit" value="20" min="1" max="50" class="w-full border p-2 rounded text-sm mt-1">
+                </div>
+                <button onclick="fetchBulkLocations()" class="bg-indigo-600 hover:bg-indigo-700 text-white p-2 rounded text-sm font-medium transition cursor-pointer">
+                    Fetch & Add Nearest
                 </button>
             </div>
 
@@ -63,7 +89,7 @@
                     <h2 class="font-semibold text-gray-700 text-sm">Destinations (<span id="locationCount">0</span>/200)</h2>
                     <button onclick="clearAllLocations()" class="text-red-500 hover:text-red-700 text-xs font-medium cursor-pointer">Clear All</button>
                 </div>
-                <div id="locationList" class="border rounded-lg bg-gray-50 flex-1 min-h-[150px] max-h-60 overflow-y-auto p-2 flex flex-col gap-2">
+                <div id="locationList" class="border rounded-lg bg-gray-50 flex-1 min-h-[120px] max-h-48 overflow-y-auto p-2 flex flex-col gap-2">
                     <p class="text-gray-400 text-xs text-center mt-6">No locations added yet.</p>
                 </div>
             </div>
@@ -73,10 +99,15 @@
                 Find Fastest Route
             </button>
 
-            <!-- Route Summary -->
-            <div id="routeSummary" class="hidden border p-3 rounded-lg bg-blue-50 text-xs text-blue-900 flex flex-col gap-1">
-                <span class="font-bold">Route Summary:</span>
-                <span id="summaryText">Calculated distance and time will appear here.</span>
+            <!-- Route Summary & Export -->
+            <div id="routeSummary" class="hidden border p-3 rounded-lg bg-blue-50 text-xs text-blue-900 flex flex-col gap-2">
+                <div>
+                    <span class="font-bold">Route Summary:</span><br>
+                    <span id="summaryText">Calculated metrics here.</span>
+                </div>
+                <button onclick="exportGPX()" class="bg-blue-600 hover:bg-blue-700 text-white py-1.5 px-3 rounded font-medium text-center cursor-pointer">
+                    Download GPX (for Google My Maps)
+                </button>
             </div>
         </div>
 
@@ -88,8 +119,8 @@
 
     <!-- Leaflet JS -->
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://unpkg.com/leaflet-polylinedecorator@1.6.0/dist/leaflet.polylineDecorator.js"></script>
     <script>
-        // Initialize Map centered on US
         const map = L.map('map').setView([39.8283, -98.5795], 4);
         L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
             maxZoom: 19,
@@ -99,15 +130,35 @@
         let locations = [];
         let markers = [];
         let routeLayer = null;
+        let routeDecorator = null;
+        let lastOptimizedGeoJSON = null;
 
-        // Add searched location using Nominatim API
+        function switchTab(tab) {
+            const singleTab = document.getElementById('tabSingle');
+            const bulkTab = document.getElementById('tabBulk');
+            const singlePanel = document.getElementById('panelSingle');
+            const bulkPanel = document.getElementById('panelBulk');
+
+            if (tab === 'single') {
+                singleTab.className = "flex-1 py-2 text-center border-b-2 border-blue-600 text-blue-600 cursor-pointer";
+                bulkTab.className = "flex-1 py-2 text-center text-gray-500 cursor-pointer";
+                singlePanel.classList.remove('hidden');
+                bulkPanel.classList.add('hidden');
+            } else {
+                bulkTab.className = "flex-1 py-2 text-center border-b-2 border-blue-600 text-blue-600 cursor-pointer";
+                singleTab.className = "flex-1 py-2 text-center text-gray-500 cursor-pointer";
+                bulkPanel.classList.remove('hidden');
+                singlePanel.classList.add('hidden');
+            }
+        }
+
         async function searchAndAddLocation() {
             const query = document.getElementById('searchQuery').value.trim();
             const city = document.getElementById('searchCity').value.trim();
             const state = document.getElementById('searchState').value.trim();
 
             if (!query) {
-                alert('Please enter a location name or address.');
+                alert('Please enter a location name.');
                 return;
             }
 
@@ -120,30 +171,87 @@
                 const data = await response.json();
 
                 if (data.length === 0) {
-                    alert('Location not found. Try refining your search or filters.');
+                    alert('Location not found.');
                     return;
                 }
-
-                const place = data[0];
-                const newLoc = {
-                    name: place.display_name,
-                    lat: parseFloat(place.lat),
-                    lon: parseFloat(place.lon)
-                };
 
                 if (locations.length >= 200) {
                     alert('Maximum limit of 200 locations reached.');
                     return;
                 }
 
-                locations.push(newLoc);
+                locations.push({
+                    name: data[0].display_name,
+                    lat: parseFloat(data[0].lat),
+                    lon: parseFloat(data[0].lon)
+                });
+
                 updateUI();
-                
-                // Clear query input for next entry
                 document.getElementById('searchQuery').value = '';
             } catch (error) {
-                console.error('Geocoding error:', error);
-                alert('Error fetching location. Please check your network connection.');
+                alert('Error fetching location.');
+            }
+        }
+
+        async function fetchBulkLocations() {
+            const centerQuery = document.getElementById('bulkCenter').value.trim();
+            const keyword = document.getElementById('bulkKeyword').value.trim();
+            let limit = parseInt(document.getElementById('bulkLimit').value) || 20;
+
+            if (!centerQuery || !keyword) {
+                alert('Please enter both a reference location and keyword.');
+                return;
+            }
+
+            try {
+                // 1. Geocode center point
+                const geoRes = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(centerQuery)}`);
+                const geoData = await geoRes.json();
+                if (geoData.length === 0) {
+                    alert('Reference location not found.');
+                    return;
+                }
+
+                const lat = parseFloat(geoData[0].lat);
+                const lon = parseFloat(geoData[0].lon);
+
+                // 2. Query Overpass API for nearest nodes/pois
+                const radius = 50000; // 50km search radius box approximation
+                const overpassQuery = `[out:json][timeout:25];(
+                  node["name"~"${keyword}",i](around:${radius},${lat},${lon});
+                  way["name"~"${keyword}",i](around:${radius},${lat},${lon});
+                  relation["name"~"${keyword}",i](around:${radius},${lat},${lon});
+                );out center ${limit};`;
+
+                const overpassRes = await fetch('https://overpass-api.de/api/interpreter', {
+                    method: 'POST',
+                    body: overpassQuery
+                });
+                const overpassData = await overpassRes.json();
+
+                if (!overpassData.elements || overpassData.elements.length === 0) {
+                    alert('No matching locations found nearby.');
+                    return;
+                }
+
+                let addedCount = 0;
+                overpassData.elements.forEach(el => {
+                    if (locations.length >= 200) return;
+                    let eLat = el.lat || (el.center && el.center.lat);
+                    let eLon = el.lon || (el.center && el.center.lon);
+                    let name = el.tags && el.tags.name ? `${el.tags.name} (${keyword})` : keyword;
+
+                    if (eLat && eLon) {
+                        locations.push({ name: name, lat: eLat, lon: eLon });
+                        addedCount++;
+                    }
+                });
+
+                updateUI();
+                alert(`Successfully added ${addedCount} locations!`);
+            } catch (error) {
+                console.error(error);
+                alert('Error fetching bulk locations.');
             }
         }
 
@@ -155,14 +263,20 @@
         function clearAllLocations() {
             locations = [];
             updateUI();
+            clearRouteLayers();
+        }
+
+        function clearRouteLayers() {
             if (routeLayer) map.removeLayer(routeLayer);
+            if (routeDecorator) map.removeLayer(routeDecorator);
+            routeLayer = null;
+            routeDecorator = null;
         }
 
         function updateUI() {
             const listEl = document.getElementById('locationList');
             document.getElementById('locationCount').innerText = locations.length;
             
-            // Clear markers from map
             markers.forEach(m => map.removeLayer(m));
             markers = [];
 
@@ -179,8 +293,6 @@
                         <button onclick="removeLocation(${idx})" class="text-red-500 hover:text-red-700 font-bold px-1">✕</button>
                     </div>
                 `;
-
-                // Add marker
                 const marker = L.marker([loc.lat, loc.lon]).addTo(map)
                     .bindPopup(`<b>Stop ${idx + 1}</b><br>${loc.name}`);
                 markers.push(marker);
@@ -188,37 +300,26 @@
 
             listEl.innerHTML = html;
 
-            // Fit map bounds to markers if any exist
             if (markers.length > 0) {
                 const group = new L.featureGroup(markers);
                 map.fitBounds(group.getBounds().pad(0.1));
             }
         }
 
-        // Haversine formula to calculate straight-line distance (for fast TSP approximation)
         function getDistanceFromLatLonInKm(lat1, lon1, lat2, lon2) {
             const R = 6371;
-            const dLat = deg2rad(lat2 - lat1);
-            const dLon = deg2rad(lon2 - lon1);
+            const dLat = (lat2 - lat1) * (Math.PI/180);
+            const dLon = (lon2 - lon1) * (Math.PI/180);
             const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
-                      Math.cos(deg2rad(lat1)) * Math.cos(deg2rad(lat2)) *
+                      Math.cos(lat1 * (Math.PI/180)) * Math.cos(lat2 * (Math.PI/180)) *
                       Math.sin(dLon/2) * Math.sin(dLon/2);
-            const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-            return R * c;
+            return R * (2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a)));
         }
 
-        function deg2rad(deg) {
-            return deg * (Math.PI/180);
-        }
-
-        // Nearest Neighbor heuristic to solve TSP efficiently for up to 200 points
         function solveTSP(pts, isRoundTrip) {
             if (pts.length <= 2) return pts.map((_, i) => i);
-
             let unvisited = Array.from({length: pts.length}, (_, i) => i);
             let route = [];
-            
-            // Start with the first added location
             let currentIdx = unvisited.shift();
             route.push(currentIdx);
 
@@ -237,17 +338,15 @@
                         nearestIdx = i;
                     }
                 }
-
                 currentIdx = unvisited.splice(nearestIdx, 1)[0];
                 route.push(currentIdx);
             }
-
             return route;
         }
 
         async function optimizeRoute() {
             if (locations.length < 3) {
-                alert('Please add at least 3 locations to optimize a route.');
+                alert('Please add at least 3 locations.');
                 return;
             }
 
@@ -255,11 +354,8 @@
             const optimizedIndices = solveTSP(locations, isRoundTrip);
             
             let orderedLocations = optimizedIndices.map(i => locations[i]);
-            if (isRoundTrip) {
-                orderedLocations.push(orderedLocations[0]); // Complete loop back to start
-            }
+            if (isRoundTrip) orderedLocations.push(orderedLocations[0]);
 
-            // Construct OSRM Route URL
             const coordsString = orderedLocations.map(l => `${l.lon},${l.lat}`).join(';');
             const osrmUrl = `https://router.project-osrm.org/route/v1/driving/${coordsString}?overview=full&geometries=geojson`;
 
@@ -268,32 +364,61 @@
                 const data = await response.json();
 
                 if (data.code !== 'Ok' || !data.routes.length) {
-                    alert('Could not calculate driving route between points.');
+                    alert('Could not calculate driving route.');
                     return;
                 }
 
                 const route = data.routes[0];
-                const distanceKm = (route.distance / 1000).toFixed(1);
-                const distanceMiles = (distanceKm * 0.621371).toFixed(1);
+                lastOptimizedGeoJSON = route.geometry;
+                const distanceMiles = ((route.distance / 1000) * 0.621371).toFixed(1);
                 const durationMins = Math.round(route.duration / 60);
 
-                // Display summary
-                const summaryEl = document.getElementById('routeSummary');
-                const summaryText = document.getElementById('summaryText');
-                summaryEl.classList.remove('hidden');
-                summaryText.innerHTML = `Total Distance: <b>${distanceMiles} miles</b> (${distanceKm} km)<br>Estimated Drive Time: <b>~${durationMins} minutes</b>`;
+                document.getElementById('routeSummary').classList.remove('hidden');
+                document.getElementById('summaryText').innerHTML = `Total Distance: <b>${distanceMiles} miles</b><br>Est. Time: <b>~${durationMins} mins</b>`;
 
-                // Draw route on map
-                if (routeLayer) map.removeLayer(routeLayer);
-                
+                clearRouteLayers();
+
                 const coords = route.geometry.coordinates.map(c => [c[1], c[0]]);
-                routeLayer = L.polyline(coords, { color: '#2563eb', weight: 5, opacity: 0.7 }).addTo(map);
-                map.fitBounds(routeLayer.getBounds().pad(0.1));
+                routeLayer = L.polyline(coords, { color: '#2563eb', weight: 5, opacity: 0.8 }).addTo(map);
+                
+                // Add direction arrow indicators along the path
+                routeDecorator = L.polylineDecorator(routeLayer, {
+                    patterns: [
+                        { offset: '25%', repeat: '100px', symbol: L.Symbol.arrowHead({ pixelSize: 12, polygon: false, pathOptions: { stroke: true, color: '#1e3a8a', weight: 3 } }) },
+                        { offset: '75%', repeat: '100px', symbol: L.Symbol.arrowHead({ pixelSize: 12, polygon: false, pathOptions: { stroke: true, color: '#1e3a8a', weight: 3 } }) }
+                    ]
+                }).addTo(map);
 
+                map.fitBounds(routeLayer.getBounds().pad(0.1));
             } catch (error) {
-                console.error('Routing error:', error);
-                alert('Error communicating with the routing service.');
+                console.error(error);
+                alert('Routing error occurred.');
             }
+        }
+
+        function exportGPX() {
+            if (!lastOptimizedGeoJSON) {
+                alert('Please optimize a route first.');
+                return;
+            }
+
+            let gpxContent = `<?xml version="1.0" encoding="UTF-8"?>\n`;
+            gpxContent += `<gpx version="1.1" creator="Multi-Stop Route Optimizer">\n  <trk>\n    <name>Optimized Route</name>\n    <trkseg>\n`;
+
+            lastOptimizedGeoJSON.coordinates.forEach(coord => {
+                gpxContent += `      <trkpt lat="${coord[1]}" lon="${coord[0]}"></trkpt>\n`;
+            });
+
+            gpxContent += `    </trkseg>\n  </trk>\n</gpx>`;
+
+            const blob = new Blob([gpxContent], { type: 'application/gpx+xml' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'optimized-route.gpx';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
         }
     </script>
 </body>
